@@ -1,0 +1,30 @@
+# ── FastAPI backend service ───────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: verirag-fastapi-service
+  namespace: verirag
+spec:
+  selector:
+    app: verirag-backend
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP
+
+---
+# ── Streamlit frontend service ────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: verirag-streamlit-service
+  namespace: verirag
+spec:
+  selector:
+    app: verirag-frontend
+  ports:
+    - protocol: TCP
+      port: 8501
+      targetPort: 8501
+  type: ClusterIP

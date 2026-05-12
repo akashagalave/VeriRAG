@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: verirag-backend
+  namespace: verirag
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: verirag-backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: verirag-backend
+    spec:
+      containers:
+        - name: backend
+          image: PLACEHOLDER_ECR_REGISTRY/verirag-backend:latest
+          # deploy.yml replaces this with the exact $GITHUB_SHA tag
+          ports:
+            - containerPort: 8000
+
+          # ── Env from Secret + ConfigMap ──────────────────────────────────
+          envFrom:
+            - secretRef:
+                name: verirag-secrets
+            - configMapRef:
+                name: verirag-config
+
+          # ── Liveness probe — restarts container if it hangs ──────────────
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+
+          # ── Readiness probe — no traffic until graph is compiled ─────────
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+
+          # ── Resource limits ──────────────────────────────────────────────
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"

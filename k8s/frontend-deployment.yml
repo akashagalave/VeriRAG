@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: verirag-frontend
+  namespace: verirag
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: verirag-frontend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: verirag-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: PLACEHOLDER_ECR_REGISTRY/verirag-frontend:latest
+          # deploy.yml replaces this with the exact $GITHUB_SHA tag
+          ports:
+            - containerPort: 8501
+
+          # ── Env from Secret + ConfigMap ──────────────────────────────────
+          envFrom:
+            - secretRef:
+                name: verirag-secrets
+            - configMapRef:
+                name: verirag-config
+
+          # ── Liveness probe ───────────────────────────────────────────────
+          livenessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+
+          # ── Readiness probe ──────────────────────────────────────────────
+          readinessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+
+          # ── Resource limits ──────────────────────────────────────────────
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"

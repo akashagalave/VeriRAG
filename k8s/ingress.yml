@@ -1,0 +1,35 @@
+# Requires AWS Load Balancer Controller installed on the cluster.
+# Install with:
+#   helm repo add eks https://aws.github.io/eks-charts
+#   helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+#     -n kube-system --set clusterName=<YOUR_CLUSTER_NAME>
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: verirag-ingress
+  namespace: verirag
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+spec:
+  rules:
+    - http:
+        paths:
+          # FastAPI — all /api/* traffic goes to backend
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: verirag-fastapi-service
+                port:
+                  number: 8000
+          # Streamlit — everything else goes to frontend
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: verirag-streamlit-service
+                port:
+                  number: 8501
