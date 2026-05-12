@@ -1,24 +1,17 @@
 """
 app.py
 ------
-Streamlit frontend for Papeer.
+Streamlit frontend for VeriRAG.
 
-Original functionality fully preserved:
-  ✅ Session sidebar with auto-naming
-  ✅ New Chat button
-  ✅ Upload files / Load URLs / Load ArXiv
-  ✅ Loaded Documents list
-  ✅ Token streaming (answers appear word by word)
-  ✅ 📊 Graph state expander per turn  (identical JSON to original)
-  ✅ 📄 Sources expander per turn      (new — retrieved chunks with labels)
-  ✅ /btw side channel (local, no session side-effects)
-  ✅ Session history reloads on switch (via GET /sessions/{id}/history)
+What this file does:
+  - Session sidebar (new chat, switch sessions, auto-naming)
+  - Document upload (PDF / URL / ArXiv) via FastAPI
+  - Chat interface with token streaming
+  - Sources expander per turn (retrieved chunks)
+  - /btw side channel (local, not saved to history)
 
-What changed:
-  • No direct imports of LangGraph / vector store — all AI logic is in FastAPI
-  • httpx replaces direct graph.stream() — streaming protocol is NDJSON
-  • BACKEND_URL in .env controls which FastAPI instance Streamlit talks to
-    (http://localhost:8000 locally, http://fastapi-service:8000 in EKS)
+All AI logic lives in backend/api.py (FastAPI).
+This file only handles UI and calls the API via httpx.
 """
 
 import json
@@ -40,18 +33,17 @@ st.set_page_config(page_title="VeriRAG", page_icon="📚", layout="centered")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 SESSIONS_FILE = Path("sessions.json")
 
-# Session-naming LLM — stays in Streamlit, it's pure UI logic
+# Used only for generating session names — pure UI logic
 _rename_llm = ChatOpenAI(model="gpt-4o-mini")
 
 
-# ── HTTP helpers ──────────────────────────────────────────────────────────────
+# ── HTTP client ───────────────────────────────────────────────────────────────
 
 def _client() -> httpx.Client:
-    """Standard httpx client — 120 s timeout covers long RAG chains."""
     return httpx.Client(base_url=BACKEND_URL, timeout=120.0)
 
 
-# ── Session persistence (local JSON file — same as original) ──────────────────
+# ── Session helpers ───────────────────────────────────────────────────────────
 
 def load_sessions() -> dict:
     try:
@@ -106,16 +98,12 @@ def maybe_rename_session(session_id: str, first_message: str) -> None:
 
 
 def load_session_chats(session_id: str) -> list[dict]:
-    """
-    Reload past messages for a session from the FastAPI backend.
-    Replaces the original load_session_chats() which read the SQLite
-    checkpointer directly. Now calls GET /sessions/{id}/history.
-    """
+    """Reload past messages from FastAPI backend when switching sessions."""
     try:
         with _client() as client:
             resp = client.get(f"/sessions/{session_id}/history")
         resp.raise_for_status()
-        return resp.json()   # list of ChatMessage dicts
+        return resp.json()
     except Exception:
         return []
 
@@ -123,7 +111,6 @@ def load_session_chats(session_id: str) -> list[dict]:
 def switch_session(session_id: str) -> None:
     st.session_state.active_session_id = session_id
     if session_id not in st.session_state.chats:
-        # Reload history from backend checkpointer — same as original behaviour
         st.session_state.chats[session_id] = load_session_chats(session_id)
     if session_id not in st.session_state.turns:
         turn_count = sum(
@@ -322,19 +309,13 @@ st.markdown(
 st.divider()
 
 
-# ── Chat display ──────────────────────────────────────────────────────────────
+# ── Chat display — render existing messages ───────────────────────────────────
 
 for msg in st.session_state.chats.get(active_sid, []):
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
+        # Sources expander — only for assistant messages that have sources
         if msg["role"] == "assistant":
-            # 📊 Graph state expander — identical to original
-            with st.expander(
-                f"📊 Graph state · turn {msg.get('turn', '?')}",
-                expanded=False,
-            ):
-                st.json(msg.get("graph_state") or {})
-            # 📄 Sources expander — new addition
             sources = msg.get("sources") or []
             if sources:
                 with st.expander(
@@ -351,8 +332,7 @@ for msg in st.session_state.chats.get(active_sid, []):
                         st.caption(src["content"][:300])
 
 
-# ── /btw side-channel ─────────────────────────────────────────────────────────
-# Kept local — btw_handler has no session side-effects, no round-trip needed.
+# ── /btw side channel ─────────────────────────────────────────────────────────
 
 def _handle_btw_locally(query: str):
     from backend.btw_handler import handle_btw
@@ -397,7 +377,6 @@ if prompt := st.chat_input("Ask about your papers, verify a claim, or search the
             st.markdown(prompt)
         st.session_state.chats[active_sid].append({"role": "user", "content": prompt})
         st.session_state.turns[active_sid] += 1
-        current_turn = st.session_state.turns[active_sid]
 
         if is_first_message:
             maybe_rename_session(active_sid, prompt)
@@ -409,11 +388,6 @@ if prompt := st.chat_input("Ask about your papers, verify a claim, or search the
             error_msg: str | None = None
 
             try:
-                # Stream NDJSON lines from POST /sessions/{id}/query ─────────
-                # Protocol:
-                #   {"type": "token", "data": "..."}   → append to response
-                #   {"type": "done",  "data": {...}}    → sources + graph_state
-                #   {"type": "error", "data": "..."}    → show error
                 with httpx.Client(base_url=BACKEND_URL, timeout=120.0) as client:
                     with client.stream(
                         "POST",
@@ -433,8 +407,8 @@ if prompt := st.chat_input("Ask about your papers, verify a claim, or search the
 
                             elif etype == "done":
                                 done_data = event["data"]
-                                # For direct_answer / verify_claim, streaming
-                                # may produce nothing — fall back to full answer
+                                # direct_answer / verify_claim may not stream tokens
+                                # fall back to full answer from done event
                                 if not response_text:
                                     response_text = done_data.get("answer", "")
 
@@ -451,7 +425,7 @@ if prompt := st.chat_input("Ask about your papers, verify a claim, or search the
                     "Is the FastAPI server running?"
                 )
 
-            # ── Render final answer ───────────────────────────────────────────
+            # Render final answer
             if error_msg:
                 placeholder.error(error_msg)
                 response_text = error_msg
@@ -459,17 +433,10 @@ if prompt := st.chat_input("Ask about your papers, verify a claim, or search the
             else:
                 placeholder.markdown(response_text)
 
-            graph_state = done_data.get("graph_state") or {}
             sources = done_data.get("sources") or []
             route = done_data.get("route")
 
-            # 📊 Graph state expander — identical to original ─────────────────
-            with st.expander(
-                f"📊 Graph state · turn {current_turn}", expanded=False
-            ):
-                st.json(graph_state)
-
-            # 📄 Sources expander ─────────────────────────────────────────────
+            # Sources expander — show where the answer came from
             if sources:
                 with st.expander(
                     f"📄 Sources · {len(sources)} chunks · route: {route or '—'}",
@@ -483,14 +450,12 @@ if prompt := st.chat_input("Ask about your papers, verify a claim, or search the
                         st.markdown(f"**{i}. {label}**")
                         st.caption(src["content"][:300])
 
-        # Persist to in-memory chat history
+        # Save to in-memory chat history
         st.session_state.chats[active_sid].append({
             "role": "assistant",
             "content": response_text,
-            "graph_state": graph_state,
             "sources": sources,
             "route": route,
-            "turn": current_turn,
         })
 
         if is_first_message:

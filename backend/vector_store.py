@@ -65,7 +65,7 @@ def _collection_is_hybrid(collection_name: str) -> bool:
     """
     try:
         info = qdrant_client.get_collection(collection_name)
-        sparse_cfg = info.config.params.sparse_vectors_config
+        sparse_cfg = info.config.params.sparse_vectors
         return bool(sparse_cfg)
     except Exception:
         return False
@@ -124,10 +124,12 @@ def get_vectorstore(session_id: str) -> QdrantVectorStore:
         "Re-ingest documents to enable hybrid retrieval.",
         collection_name,
     )
+    # Fixed legacy path
     return QdrantVectorStore(
         client=qdrant_client,
         collection_name=collection_name,
         embedding=embeddings,
+        vector_name=DENSE_VECTOR_NAME,
     )
 
 

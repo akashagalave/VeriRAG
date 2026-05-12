@@ -15,13 +15,13 @@ Routes
 
 Rate limiting
 ~~~~~~~~~~~~~
-  SlowAPI (token-bucket) — default 30 req/min per IP, configurable via
-  RATE_LIMIT_PER_MINUTE in .env.  Applied only to /query (the expensive route).
+  SlowAPI — default 30 req/min per IP, configurable via RATE_LIMIT_PER_MINUTE in .env.
+  Applied only to /query (the expensive route).
 
 Observability
 ~~~~~~~~~~~~~
   All latency, token counts, and per-node traces are tracked in LangSmith.
-  LANGSMITH_TRACING=true in .env is all that is needed — no extra code here.
+  LANGSMITH_TRACING=true in .env is all that is needed.
   View traces at: https://smith.langchain.com → project "VeriRAG"
 
 Swagger UI
@@ -62,15 +62,14 @@ _rate = os.getenv("RATE_LIMIT_PER_MINUTE", "30")
 limiter = Limiter(key_func=get_remote_address)
 
 # ── LangGraph singleton ───────────────────────────────────────────────────────
-# Built once at startup; re-used for every request.
-# SQLite checkpointer is thread-safe with check_same_thread=False.
+# Built once at startup — re-used for every request.
 
 _graph = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Build the LangGraph at startup so the first request is not slow."""
+    """Build the LangGraph once at startup so the first request is not slow."""
     global _graph
     logger.info("Building LangGraph…")
     _graph = build_graph(db_path=os.getenv("CHECKPOINT_DB", "checkpoints.db"))
@@ -88,7 +87,7 @@ def get_graph():
     return _graph
 
 
-# ── App factory ───────────────────────────────────────────────────────────────
+# ── App ───────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
     title="VeriRAG API",
@@ -120,39 +119,6 @@ app.add_middleware(
 )
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _serialize_state(values: dict) -> dict:
-    """
-    Convert LangGraph state to a JSON-serialisable dict.
-    Mirrors the original _serialize_state in app.py exactly — same keys,
-    same truncation lengths, so the Streamlit graph-state expander shows
-    identical output to the original single-process version.
-    """
-    out = {}
-    for k, v in values.items():
-        if k == "messages":
-            out[k] = [
-                {
-                    "type": type(m).__name__,
-                    "content": (
-                        m.content[:300]
-                        if isinstance(m.content, str)
-                        else repr(m.content)[:300]
-                    ),
-                }
-                for m in (v or [])
-            ]
-        elif k == "retrieved_docs":
-            out[k] = [
-                {"content": d.page_content[:300], "metadata": d.metadata}
-                for d in (v or [])
-            ]
-        else:
-            out[k] = v
-    return out
-
-
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
 
 class QueryRequest(BaseModel):
@@ -168,8 +134,6 @@ class QueryRequest(BaseModel):
 class ChatMessage(BaseModel):
     role: str
     content: str
-    turn: Optional[int] = None
-    graph_state: Optional[dict] = None
     sources: Optional[list] = None
     route: Optional[str] = None
 
@@ -223,10 +187,7 @@ async def ready():
     response_model=SessionInfoResponse,
     tags=["sessions"],
     summary="Collection stats for a session",
-    description=(
-        "Returns chunk count, hybrid-retrieval status, and loaded paper titles "
-        "for the given session ID."
-    ),
+    description="Returns chunk count, hybrid-retrieval status, and loaded paper titles.",
 )
 async def session_info(session_id: str):
     stats = collection_stats(session_id)
@@ -245,10 +206,7 @@ async def session_info(session_id: str):
     response_model=list[ChatMessage],
     tags=["sessions"],
     summary="Reload chat history for a session",
-    description=(
-        "Reads the SQLite checkpointer and returns all HumanMessage / AIMessage "
-        "pairs for this session — used by Streamlit to restore chat on session switch."
-    ),
+    description="Reads the SQLite checkpointer and returns all messages for this session.",
 )
 async def session_history(session_id: str):
     graph = get_graph()
@@ -262,7 +220,6 @@ async def session_history(session_id: str):
 
     messages = state.values.get("messages", [])
     chats: list[ChatMessage] = []
-    turn = 0
 
     for msg in messages:
         type_name = type(msg).__name__
@@ -274,12 +231,9 @@ async def session_history(session_id: str):
         elif type_name in ("AIMessage", "AIMessageChunk"):
             if not content.strip():
                 continue
-            turn += 1
             chats.append(ChatMessage(
                 role="assistant",
                 content=content,
-                turn=turn,
-                graph_state=_serialize_state(state.values),
                 sources=[],
                 route=state.values.get("route"),
             ))
@@ -363,22 +317,21 @@ async def ingest(
     tags=["query"],
     summary="Run the RAG pipeline (streaming)",
     description=(
-        "Streams the answer token-by-token from the `generate_answer` node.\n\n"
+        "Streams the answer token-by-token from the generate_answer node.\n\n"
         "**Stream protocol** — each line is a newline-delimited JSON object:\n\n"
         "```\n"
-        "{\"type\": \"token\",  \"data\": \"text chunk\"}\n"
-        "{\"type\": \"done\",   \"data\": {\"route\": \"retrieve\", "
-        "\"retrieval_attempts\": 1, \"answer\": \"...\", "
-        "\"sources\": [...], \"graph_state\": {...}}}\n"
-        "{\"type\": \"error\",  \"data\": \"error message\"}\n"
+        "{\"type\": \"token\", \"data\": \"text chunk\"}\n"
+        "{\"type\": \"done\",  \"data\": {\"answer\": \"...\", "
+        "\"route\": \"retrieve\", \"sources\": [...]}}\n"
+        "{\"type\": \"error\", \"data\": \"error message\"}\n"
         "```\n\n"
-        "Rate-limited to `RATE_LIMIT_PER_MINUTE` requests per IP (default 30/min)."
+        "Rate-limited to RATE_LIMIT_PER_MINUTE requests per IP (default 30/min)."
     ),
     response_class=StreamingResponse,
 )
 @limiter.limit(f"{_rate}/minute")
 async def query_session(
-    request: Request,
+    request: Request,   # required by SlowAPI for IP extraction
     session_id: str,
     body: QueryRequest,
 ):
@@ -402,6 +355,7 @@ async def query_session(
         }
 
         try:
+            # Stream tokens from generate_answer node only
             for chunk, metadata in graph.stream(
                 input_state, config, stream_mode="messages"
             ):
@@ -412,6 +366,7 @@ async def query_session(
                 ):
                     yield json.dumps({"type": "token", "data": chunk.content}) + "\n"
 
+            # Graph finished — read final state for sources
             final_values = graph.get_state(config).values
             retrieved_docs = final_values.get("retrieved_docs") or []
             sources = [
@@ -421,14 +376,14 @@ async def query_session(
                 }
                 for doc in retrieved_docs
             ]
+
+            # Send done event with answer + sources
             yield json.dumps({
                 "type": "done",
                 "data": {
                     "answer": final_values.get("answer") or "",
                     "route": final_values.get("route"),
-                    "retrieval_attempts": final_values.get("retrieval_attempts", 0),
                     "sources": sources,
-                    "graph_state": _serialize_state(final_values),
                 },
             }) + "\n"
 

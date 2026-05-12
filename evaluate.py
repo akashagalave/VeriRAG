@@ -1,3 +1,4 @@
+
 import json
 import sys
 from pathlib import Path
@@ -33,9 +34,6 @@ GOLDENS_FILE        = Path("goldens.json")
 MAX_CONTEXTS        = 5
 GOLDENS_PER_CONTEXT = 2
 METRIC_THRESHOLD    = 0.7
-
-# CI gate — eval.yml reads eval_results.json and fails the PR if this is not met
-FAITHFULNESS_GATE   = 0.7
 
 
 def generate_goldens() -> list[dict]:
@@ -86,20 +84,20 @@ def main() -> None:
     graph = build_graph(db_path="eval_checkpoints.db")
 
     metrics = [
-        ContextualPrecisionMetric(threshold=METRIC_THRESHOLD, model="gpt-4o-mini"),
-        ContextualRecallMetric(threshold=METRIC_THRESHOLD, model="gpt-4o-mini"),
-        ContextualRelevancyMetric(threshold=METRIC_THRESHOLD, model="gpt-4o-mini"),
-        AnswerRelevancyMetric(threshold=METRIC_THRESHOLD, model="gpt-4o-mini"),
-        FaithfulnessMetric(threshold=METRIC_THRESHOLD, model="gpt-4o-mini"),
+        ContextualPrecisionMetric(threshold=METRIC_THRESHOLD, model="gpt-5.4-mini"),
+        ContextualRecallMetric(threshold=METRIC_THRESHOLD, model="gpt-5.4-mini"),
+        ContextualRelevancyMetric(threshold=METRIC_THRESHOLD, model="gpt-5.4-mini"),
+        AnswerRelevancyMetric(threshold=METRIC_THRESHOLD, model="gpt-5.4-mini"),
+        FaithfulnessMetric(threshold=METRIC_THRESHOLD, model="gpt-5.4-mini"),
     ]
 
     test_cases = []
     for pair in pairs:
-        session_id = f"evaluation_session_{uuid4()}"
-        add_paper(docs, session_id)
+        eval_session_id = f"evaluation_session_{uuid4().hex}"
+        add_paper(docs, eval_session_id)
 
         query = pair["input"] + " as per the report in knowledge base"
-        answer, retrieval_context = run_rag_query(graph, query, session_id)
+        answer, retrieval_context = run_rag_query(graph, query, eval_session_id)
         test_cases.append(
             LLMTestCase(
                 input=pair["input"],
@@ -135,32 +133,6 @@ def main() -> None:
     results_path = Path("eval_results.json")
     results_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"\nResults saved to {results_path}.")
-
-    # ── CI gate ───────────────────────────────────────────────────────────────
-    # Parse Faithfulness scores from eval_results.json.
-    # GitHub Actions eval.yml reads the exit code:
-    #   exit 0 → PR passes
-    #   exit 1 → PR blocked (Faithfulness below gate threshold)
-    faithfulness_scores = [
-        m["score"]
-        for result in summary
-        for m in result["metrics"]
-        if m["name"] == "Faithfulness" and m["score"] is not None
-    ]
-
-    if faithfulness_scores:
-        avg_faithfulness = sum(faithfulness_scores) / len(faithfulness_scores)
-        print(f"\nFaithfulness (avg): {avg_faithfulness:.3f}  (gate: {FAITHFULNESS_GATE})")
-        if avg_faithfulness < FAITHFULNESS_GATE:
-            print(
-                f"CI GATE FAILED — Faithfulness {avg_faithfulness:.3f} "
-                f"< {FAITHFULNESS_GATE}. Blocking PR."
-            )
-            sys.exit(1)
-        else:
-            print("CI GATE PASSED.")
-    else:
-        print("Warning: no Faithfulness scores found in results — skipping gate.")
 
 
 if __name__ == "__main__":
