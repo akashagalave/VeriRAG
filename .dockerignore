@@ -1,0 +1,51 @@
+# ── Secrets and local config ──────────────────────────────────────────────────
+.env
+
+# ── Python ────────────────────────────────────────────────────────────────────
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+
+# ── Caches ────────────────────────────────────────────────────────────────────
+embedding_cache/
+.deepeval/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.claude/
+
+# ── Database / checkpoint files ───────────────────────────────────────────────
+*.db
+*.db-shm
+*.db-wal
+
+# ── Eval artifacts ────────────────────────────────────────────────────────────
+eval_results.json
+eval_checkpoints.db
+
+# ── Git ───────────────────────────────────────────────────────────────────────
+.git/
+.gitignore
+
+# ── CI/CD — not needed inside image ──────────────────────────────────────────
+.github/
+
+# ── Kubernetes manifests — not needed inside image ───────────────────────────
+k8s/
+
+# ── Docs and misc ─────────────────────────────────────────────────────────────
+README.md
+DEPLOYMENT.md
+DOCKER_GUIDE.md
+report.md
+CLAUDE.md
+graph.png
+graph_diag.ipynb
+docker_install_on_AWS.txt
+qdrant_login_steps.md
+
+# ── Docker files themselves ───────────────────────────────────────────────────
+docker-compose.yml
+Dockerfile.backend
+Dockerfile.frontend
