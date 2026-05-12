@@ -1,7 +1,7 @@
 [project]
-name = "rag-papeer-project"
+name = "verirag"
 version = "0.1.0"
-description = "Add your description here"
+description = "VeriRAG — Agentic Research Intelligence & Scientific Claim Verification Platform"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

@@ -35,7 +35,7 @@ load_dotenv()
 
 import os
 
-st.set_page_config(page_title="Papeer", page_icon="📚", layout="centered")
+st.set_page_config(page_title="VeriRAG", page_icon="📚", layout="centered")
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 SESSIONS_FILE = Path("sessions.json")
@@ -312,7 +312,7 @@ with st.sidebar:
 
 # ── Page header ───────────────────────────────────────────────────────────────
 
-st.title("📚 Papeer — Research Paper Assistant")
+st.title("📚 VeriRAG — Agentic Research Intelligence")
 st.markdown(
     "🔍 **Ask questions** from your uploaded papers &nbsp;·&nbsp; "
     "✅ **Verify claims** against recent literature &nbsp;·&nbsp; "

@@ -1,5 +1,5 @@
-# Generated from pyproject.toml
-# All direct dependencies for Papeer RAG project
+# VeriRAG — Agentic Research Intelligence & Scientific Claim Verification Platform
+# All direct dependencies
 # Install: pip install -r requirements.txt
 
 arxiv>=3.0.0

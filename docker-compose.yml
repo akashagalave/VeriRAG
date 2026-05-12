@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    container_name: papeer-backend
+    container_name: verirag-backend
     ports:
       - "8000:8000"
     env_file:
@@ -27,7 +27,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
-    container_name: papeer-frontend
+    container_name: verirag-frontend
     ports:
       - "8501:8501"
     env_file:
