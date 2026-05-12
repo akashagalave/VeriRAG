@@ -1,0 +1,24 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# ── Layer 1: install deps (cached until requirements.txt changes) ─────────────
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# ── Layer 2: backend package ──────────────────────────────────────────────────
+COPY backend/ backend/
+
+# ── Layer 3: documents ────────────────────────────────────────────────────────
+COPY documents/ documents/
+
+# ── Layer 4: app files (change most often — last for cache efficiency) ────────
+COPY evaluate.py .
+COPY goldens.json .
+COPY main.py .
+
+EXPOSE 8000
+
+# Liveness probe:  GET /health
+# Readiness probe: GET /ready
+CMD ["uvicorn", "backend.api:app", "--host", "0.0.0.0", "--port", "8000"]

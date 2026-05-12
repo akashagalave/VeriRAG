@@ -1,0 +1,44 @@
+services:
+
+  # ── FastAPI backend ───────────────────────────────────────────────────────
+  fastapi:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: papeer-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # Persist SQLite checkpointer and embedding cache across restarts
+      - ./checkpoints.db:/app/checkpoints.db
+      - ./embedding_cache:/app/embedding_cache
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ── Streamlit frontend ────────────────────────────────────────────────────
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: papeer-frontend
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    environment:
+      # Override BACKEND_URL so Streamlit reaches FastAPI via Docker network
+      BACKEND_URL: http://fastapi:8000
+    volumes:
+      # Persist sessions metadata across restarts
+      - ./sessions.json:/app/sessions.json
+    depends_on:
+      fastapi:
+        condition: service_healthy
+    restart: unless-stopped
