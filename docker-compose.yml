@@ -40,7 +40,6 @@ services:
       fastapi:
         condition: service_healthy
 
-# Named volumes — Docker manages these, no host files needed
 volumes:
   verirag_data:
   verirag_cache:

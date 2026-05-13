@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: PLACEHOLDER_ECR_REGISTRY/verirag-backend:latest
+          image: 372806411232.dkr.ecr.us-east-1.amazonaws.com/verirag-backend:latest
           # deploy.yml replaces this with the exact $GITHUB_SHA tag
           ports:
             - containerPort: 8000

@@ -2,14 +2,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# ── Layer 1: install deps (cached until requirements.txt changes) ─────────────
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# ── Layer 2: backend package (btw_handler local call only) ────────────────────
 COPY backend/ backend/
 
-# ── Layer 3: app files (change most often — last for cache efficiency) ────────
 COPY app.py .
 
 EXPOSE 8501
