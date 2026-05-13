@@ -59,7 +59,7 @@ def _extract_arxiv_id(query: str) -> str | None:
 def _arxiv_api_lookup(arxiv_id: str) -> str:
     """Fetch paper title by ID from the ArXiv Atom API."""
     url = f"https://export.arxiv.org/api/query?id_list={arxiv_id}"
-    with urllib.request.urlopen(url, timeout=10) as resp:
+    with urllib.request.urlopen(url, timeout=45) as resp:
         xml = resp.read().decode()
     titles = re.findall(r"<title>(.*?)</title>", xml, re.DOTALL)
     return titles[1].strip() if len(titles) > 1 else arxiv_id
@@ -70,7 +70,7 @@ def _arxiv_search(query: str) -> str:
     phrase = query.strip('"')
     search_query = urllib.parse.quote(f'ti:"{phrase}"')
     url = f"https://export.arxiv.org/api/query?search_query={search_query}&max_results=1&sortBy=relevance"
-    with urllib.request.urlopen(url, timeout=15) as resp:
+    with urllib.request.urlopen(url, timeout=30) as resp:
         xml = resp.read().decode()
     m = re.search(r"<id>https?://arxiv\.org/abs/(\d{4}\.\d{4,5}(?:v\d+)?)</id>", xml)
     if not m:
