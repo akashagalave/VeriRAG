@@ -15,7 +15,6 @@ COPY documents/ documents/
 # ── Layer 4: app files (change most often — last for cache efficiency) ────────
 COPY evaluate.py .
 COPY goldens.json .
-COPY main.py .
 
 EXPOSE 8000
 

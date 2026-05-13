@@ -10,17 +10,18 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      CHECKPOINT_DB: /app/data/checkpoints.db
     volumes:
-      # Persist SQLite checkpointer and embedding cache across restarts
-      - ./checkpoints.db:/app/checkpoints.db
-      - ./embedding_cache:/app/embedding_cache
+      - verirag_data:/app/data
+      - verirag_cache:/app/embedding_cache
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
       timeout: 10s
-      retries: 3
-      start_period: 20s
+      retries: 5
+      start_period: 60s
 
   # ── Streamlit frontend ────────────────────────────────────────────────────
   streamlit:
@@ -33,12 +34,13 @@ services:
     env_file:
       - .env
     environment:
-      # Override BACKEND_URL so Streamlit reaches FastAPI via Docker network
       BACKEND_URL: http://fastapi:8000
-    volumes:
-      # Persist sessions metadata across restarts
-      - ./sessions.json:/app/sessions.json
+    restart: unless-stopped
     depends_on:
       fastapi:
         condition: service_healthy
-    restart: unless-stopped
+
+# Named volumes — Docker manages these, no host files needed
+volumes:
+  verirag_data:
+  verirag_cache:
