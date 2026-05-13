@@ -1,18 +1,3 @@
-"""
-app.py
-------
-Streamlit frontend for VeriRAG.
-
-What this file does:
-  - Session sidebar (new chat, switch sessions, auto-naming)
-  - Document upload (PDF / URL / ArXiv) via FastAPI
-  - Chat interface with token streaming
-  - Sources expander per turn (retrieved chunks)
-  - /btw side channel (local, not saved to history)
-
-All AI logic lives in backend/api.py (FastAPI).
-This file only handles UI and calls the API via httpx.
-"""
 
 import json
 import uuid
@@ -33,17 +18,16 @@ st.set_page_config(page_title="VeriRAG", page_icon="📚", layout="centered")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 SESSIONS_FILE = Path("sessions.json")
 
-# Used only for generating session names — pure UI logic
+
 _rename_llm = ChatOpenAI(model="gpt-4o-mini")
 
 
-# ── HTTP client ───────────────────────────────────────────────────────────────
+
 
 def _client() -> httpx.Client:
     return httpx.Client(base_url=BACKEND_URL, timeout=120.0)
 
 
-# ── Session helpers ───────────────────────────────────────────────────────────
 
 def load_sessions() -> dict:
     try:
@@ -98,7 +82,7 @@ def maybe_rename_session(session_id: str, first_message: str) -> None:
 
 
 def load_session_chats(session_id: str) -> list[dict]:
-    """Reload past messages from FastAPI backend when switching sessions."""
+
     try:
         with _client() as client:
             resp = client.get(f"/sessions/{session_id}/history")
@@ -119,8 +103,6 @@ def switch_session(session_id: str) -> None:
         )
         st.session_state.turns[session_id] = turn_count
 
-
-# ── Bootstrap ─────────────────────────────────────────────────────────────────
 
 if "sessions_meta" not in st.session_state:
     st.session_state.sessions_meta = load_sessions()

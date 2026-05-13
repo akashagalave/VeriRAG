@@ -1,37 +1,5 @@
-"""
-backend/api.py
---------------
-FastAPI backend for VeriRAG —
-Agentic Research Intelligence & Scientific Claim Verification Platform.
-
-Routes
-~~~~~~
-  GET  /health                             — liveness probe  (k8s + ALB)
-  GET  /ready                              — readiness probe (k8s)
-  POST /sessions/{session_id}/ingest       — load docs into a session's vector store
-  GET  /sessions/{session_id}/info         — collection stats (chunk count, hybrid flag)
-  GET  /sessions/{session_id}/history      — reload past chat messages from checkpointer
-  POST /sessions/{session_id}/query        — full RAG pipeline, streams answer tokens
-
-Rate limiting
-~~~~~~~~~~~~~
-  SlowAPI — default 30 req/min per IP, configurable via RATE_LIMIT_PER_MINUTE in .env.
-  Applied only to /query (the expensive route).
-
-Observability
-~~~~~~~~~~~~~
-  All latency, token counts, and per-node traces are tracked in LangSmith.
-  LANGSMITH_TRACING=true in .env is all that is needed.
-  View traces at: https://smith.langchain.com → project "VeriRAG"
-
-Swagger UI
-~~~~~~~~~~
-  http://localhost:8000/docs
-  http://localhost:8000/redoc
-"""
-
 from dotenv import load_dotenv
-load_dotenv()  # must run before any langchain/openai import
+load_dotenv()  
 
 import json
 import logging
@@ -56,20 +24,17 @@ from backend.vector_store import add_paper, collection_stats, list_papers
 
 logger = logging.getLogger(__name__)
 
-# ── Rate limiter ──────────────────────────────────────────────────────────────
 
 _rate = os.getenv("RATE_LIMIT_PER_MINUTE", "30")
 limiter = Limiter(key_func=get_remote_address)
 
-# ── LangGraph singleton ───────────────────────────────────────────────────────
-# Built once at startup — re-used for every request.
+
 
 _graph = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Build the LangGraph once at startup so the first request is not slow."""
     global _graph
     logger.info("Building LangGraph…")
     _graph = build_graph(db_path=os.getenv("CHECKPOINT_DB", "checkpoints.db"))
@@ -87,7 +52,6 @@ def get_graph():
     return _graph
 
 
-# ── App ───────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
     title="VeriRAG API",
@@ -119,7 +83,6 @@ app.add_middleware(
 )
 
 
-# ── Pydantic schemas ──────────────────────────────────────────────────────────
 
 class QueryRequest(BaseModel):
     question: str = Field(
@@ -153,7 +116,6 @@ class SessionInfoResponse(BaseModel):
     paper_titles: list[str]
 
 
-# ── Health / readiness probes ─────────────────────────────────────────────────
 
 @app.get(
     "/health",
@@ -180,7 +142,7 @@ async def ready():
     return {"status": "ready"}
 
 
-# ── Session info ──────────────────────────────────────────────────────────────
+#Session info 
 
 @app.get(
     "/sessions/{session_id}/info",
@@ -199,7 +161,7 @@ async def session_info(session_id: str):
     )
 
 
-# ── Session history ───────────────────────────────────────────────────────────
+#Session history
 
 @app.get(
     "/sessions/{session_id}/history",
@@ -241,7 +203,7 @@ async def session_history(session_id: str):
     return chats
 
 
-# ── Ingest ────────────────────────────────────────────────────────────────────
+#Ingest 
 
 @app.post(
     "/sessions/{session_id}/ingest",
@@ -310,8 +272,6 @@ async def ingest(
         )
 
 
-# ── Query (streaming) ─────────────────────────────────────────────────────────
-
 @app.post(
     "/sessions/{session_id}/query",
     tags=["query"],
@@ -331,7 +291,7 @@ async def ingest(
 )
 @limiter.limit(f"{_rate}/minute")
 async def query_session(
-    request: Request,   # required by SlowAPI for IP extraction
+    request: Request,  
     session_id: str,
     body: QueryRequest,
 ):
@@ -355,7 +315,7 @@ async def query_session(
         }
 
         try:
-            # Stream tokens from generate_answer node only
+            
             for chunk, metadata in graph.stream(
                 input_state, config, stream_mode="messages"
             ):
@@ -366,7 +326,6 @@ async def query_session(
                 ):
                     yield json.dumps({"type": "token", "data": chunk.content}) + "\n"
 
-            # Graph finished — read final state for sources
             final_values = graph.get_state(config).values
             retrieved_docs = final_values.get("retrieved_docs") or []
             sources = [
@@ -377,7 +336,6 @@ async def query_session(
                 for doc in retrieved_docs
             ]
 
-            # Send done event with answer + sources
             yield json.dumps({
                 "type": "done",
                 "data": {

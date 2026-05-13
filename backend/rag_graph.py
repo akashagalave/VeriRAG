@@ -1,5 +1,4 @@
 
-# ── load env FIRST — LangSmith reads os.environ at import time ────────────────
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -26,16 +25,11 @@ from tavily import TavilyClient
 from backend.models import ClaimVerificationResult, RelevancyDecision, RouterDecision
 from backend.vector_store import search as vs_search
 
-# ── LangSmith project metadata ────────────────────────────────────────────────
-# LANGSMITH_TRACING / LANGSMITH_API_KEY / LANGSMITH_PROJECT are read from .env
-# by the langsmith SDK automatically.  Nothing else needed here.
 _LS_PROJECT = os.getenv("LANGSMITH_PROJECT", "LangGraph-Database-Backend")
 
-# ── LLM singletons ────────────────────────────────────────────────────────────
 llm = ChatOpenAI(model="gpt-4o-mini")
 
 
-# ── State ─────────────────────────────────────────────────────────────────────
 
 class RAGState(MessagesState):
     session_id: str
@@ -51,7 +45,7 @@ class RAGState(MessagesState):
     rewrite_count: int
 
 
-# ── Router ────────────────────────────────────────────────────────────────────
+#Router
 
 ROUTER_PROMPT = ChatPromptTemplate.from_messages([
     (
@@ -92,7 +86,7 @@ def router_node(state: RAGState) -> dict:
     return {"route": decision.route}
 
 
-# ── Tool schemas ──────────────────────────────────────────────────────────────
+#Tool schemas
 
 class RetrieverInput(BaseModel):
     query: str = Field(description="Semantic query to search research paper chunks")
@@ -104,7 +98,7 @@ class WebSearchInput(BaseModel):
     max_results: int = Field(default=3, ge=1, le=10, description="Number of web results to return")
 
 
-# ── Tools ─────────────────────────────────────────────────────────────────────
+#Tools
 
 @tool(args_schema=RetrieverInput)
 def retrieve_from_vectorstore(
@@ -156,7 +150,6 @@ def web_search(
     ]
 
 
-# ── Retrieval agent singletons ────────────────────────────────────────────────
 
 RETRIEVAL_TOOLS = [retrieve_from_vectorstore, web_search]
 retrieval_llm = llm.bind_tools(RETRIEVAL_TOOLS, parallel_tool_calls=False)
@@ -181,7 +174,7 @@ RETRIEVE_SYSTEM = (
 )
 
 
-# ── Relevancy check ───────────────────────────────────────────────────────────
+# Relevancy check 
 
 RELEVANCY_CHECK_SYSTEM = (
     "You are evaluating whether retrieved document chunks are relevant enough "
@@ -203,7 +196,7 @@ QUERY_REWRITE_SYSTEM = (
 )
 
 
-# ── Nodes ─────────────────────────────────────────────────────────────────────
+#Nodes
 
 MAX_RETRIEVAL_ATTEMPTS = 3
 
@@ -214,11 +207,7 @@ MAX_RETRIEVAL_ATTEMPTS = 3
     metadata={"project": _LS_PROJECT},
 )
 def agent_node(state: RAGState) -> dict:
-    """
-    Retrieval agent: decides which tool to call (vectorstore or web search).
-    Switches to plain LLM (no tool binding) once MAX_RETRIEVAL_ATTEMPTS is hit
-    to prevent orphaned tool_call IDs in the persisted message history.
-    """
+
     current_attempts = state.get("retrieval_attempts", 0)
     lm = llm if current_attempts >= MAX_RETRIEVAL_ATTEMPTS else retrieval_llm
     messages = [{"role": "system", "content": RETRIEVE_SYSTEM}] + state["messages"]
@@ -235,10 +224,7 @@ def agent_node(state: RAGState) -> dict:
     metadata={"project": _LS_PROJECT},
 )
 def relevancy_check_node(state: RAGState) -> dict:
-    """
-    Lightweight LLM call that decides whether retrieved chunks are good enough.
-    Returns is_relevant=False to trigger query rewriting if chunks are off-topic.
-    """
+
     query = state["query"]
     docs = state.get("retrieved_docs") or []
     doc_snippets = "\n\n---\n\n".join(doc.page_content[:300] for doc in docs[:3])
@@ -261,10 +247,7 @@ def relevancy_check_node(state: RAGState) -> dict:
     metadata={"project": _LS_PROJECT},
 )
 def query_rewrite_node(state: RAGState) -> dict:
-    """
-    Rewrites the user query with domain-specific terminology when the first
-    retrieval attempt returns irrelevant chunks.
-    """
+
     original_query = state["query"]
     rewrite_count = state.get("rewrite_count", 0)
     response = llm.invoke([
@@ -304,26 +287,22 @@ verification_llm = llm.with_structured_output(ClaimVerificationResult)
     metadata={"project": _LS_PROJECT},
 )
 def verify_claim_node(state: RAGState) -> dict:
-    """
-    Dual Tavily search (general web + arXiv) to find papers that supersede
-    or challenge the user's claim.  Returns structured verdict + citations.
-    """
+
     claim = state["messages"][-1].content
     tavily_client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
 
-    # General web search for recent work superseding the claim
+
     general_results = tavily_client.search(
         f"recent research superseding: {claim[:200]}",
         max_results=5,
     ).get("results", [])
 
-    # arXiv-targeted search via web to get paper titles and links
     arxiv_results = tavily_client.search(
         f"site:arxiv.org {claim[:200]}",
         max_results=5,
     ).get("results", [])
 
-    # Build context block
+
     lines = ["=== General Web Search Results ==="]
     for r in general_results:
         lines.append(
@@ -364,12 +343,7 @@ def verify_claim_node(state: RAGState) -> dict:
     metadata={"project": _LS_PROJECT},
 )
 def generate_answer_node(state: RAGState) -> dict:
-    """
-    Final answer synthesis node.
-    • retrieve      → answers from retrieved chunks (vectorstore or web)
-    • verify_claim  → formats structured verdict with superseding papers
-    • direct_answer → answers from LLM knowledge with no retrieval
-    """
+
     route = state.get("route")
     query = state["query"]
 
@@ -415,23 +389,20 @@ def generate_answer_node(state: RAGState) -> dict:
                 f"*No papers directly superseding this claim were found in recent literature.*"
             )
 
-    else:  # direct_answer
+    else: 
         prompt = f"Answer from your knowledge.\n\nQuestion: {query}"
         answer = llm.invoke([{"role": "user", "content": prompt}]).content
 
     return {"answer": answer, "messages": [AIMessage(content=answer)]}
 
 
-# ── Graph wiring ──────────────────────────────────────────────────────────────
 
 def route_query(state: RAGState) -> str:
     return state["route"]
 
 
 def agent_routing(state: RAGState) -> str:
-    # Always execute pending tool calls first — shortcutting here would leave
-    # an AIMessage with tool_calls unmatched by ToolMessages in the checkpointer,
-    # corrupting history for all future turns in the same session.
+
     tc = tools_condition(state)
     if tc == "tools":
         return "retrieval"
@@ -449,22 +420,7 @@ def after_relevancy_routing(state: RAGState) -> str:
 
 
 def build_graph(db_path: str = "checkpoints.db"):
-    """
-    Compile the RAG LangGraph with SQLite checkpointing.
 
-    LangSmith traces every graph invocation automatically when
-    LANGSMITH_TRACING=true.  Each node also has its own @traceable
-    span so you can drill into per-node latency + token usage.
-
-    Graph topology
-    ──────────────
-    router
-      ├─► agent_node ──► retrieval (tool) ──► agent_node (loop)
-      │       └─► relevancy_check ──► query_rewrite ──► agent_node
-      │                           └─► generate_answer
-      ├─► verify_claim ──► generate_answer
-      └─► generate_answer
-    """
     conn = sqlite3.connect(db_path, check_same_thread=False)
     checkpointer = SqliteSaver(conn)
 
