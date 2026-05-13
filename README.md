@@ -4,13 +4,14 @@
 
 ![Python](https://img.shields.io/badge/Python-3.12-blue?style=for-the-badge&logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-REST%20Backend-009688?style=for-the-badge&logo=fastapi&logoColor=white)
-![AWS](https://img.shields.io/badge/AWS-EC2%20%2B%20ECR-232F3E?style=for-the-badge&logo=amazon-aws&logoColor=white)
+![AWS](https://img.shields.io/badge/AWS-EKS%20%2B%20ECR-232F3E?style=for-the-badge&logo=amazon-aws&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/LangGraph-Agentic%20Pipeline-FF6B35?style=for-the-badge)
 ![GPT-4o-mini](https://img.shields.io/badge/GPT--4o--mini-Router%20%2B%20Generator-412991?style=for-the-badge&logo=openai&logoColor=white)
 ![Qdrant](https://img.shields.io/badge/Qdrant-Hybrid%20Retrieval-DC244C?style=for-the-badge)
 ![LangSmith](https://img.shields.io/badge/LangSmith-Observability-1C3C3C?style=for-the-badge)
 ![DeepEval](https://img.shields.io/badge/DeepEval-100%25%20Faithfulness-4CAF50?style=for-the-badge)
 ![Docker](https://img.shields.io/badge/Docker-Containerized-2496ED?style=for-the-badge&logo=docker&logoColor=white)
+![Kubernetes](https://img.shields.io/badge/Kubernetes-EKS%20HPA-326CE5?style=for-the-badge&logo=kubernetes&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-Frontend-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)
 
 ---
@@ -19,9 +20,7 @@
 
 **VeriRAG** is a **production-grade agentic RAG platform** that enables researchers to upload scientific papers, ask questions grounded in retrieved context, and verify whether specific research claims have been superseded by newer literature.
 
-Users upload papers → VeriRAG routes each query through an **intelligent LangGraph pipeline** — classifying intent, performing hybrid BM25 + dense retrieval with RRF fusion, running dual web searches for claim verification, and streaming answers token-by-token — all deployed on **AWS EC2** with Docker, full **LangSmith tracing**, **SlowAPI rate limiting**, and evaluated using **DeepEval** achieving **100% Faithfulness and 100% Answer Relevancy**.
-
-> **EKS Migration in Progress:** Production deployment is being migrated to AWS EKS with HPA autoscaling, rolling updates, and zero-downtime deployments. Kubernetes manifests and GitHub Actions CI/CD pipeline are complete and ready.
+Users upload papers → VeriRAG routes each query through an **intelligent LangGraph pipeline** — classifying intent, performing hybrid BM25 + dense retrieval with RRF fusion, running dual web searches for claim verification, and streaming answers token-by-token — all deployed on **AWS EKS** with HPA autoscaling, zero-downtime rolling updates, full **LangSmith tracing**, **SlowAPI rate limiting**, and evaluated using **DeepEval** achieving **100% Faithfulness and 100% Answer Relevancy**.
 
 ---
 
@@ -208,7 +207,7 @@ unrelated sections) alongside relevant text. Core RAG quality
 metrics — Faithfulness and Answer Relevancy — are both 100%.
 ```
 
-### Live Test on AWS EC2 — Research Paper Q&A
+### Live Test on AWS EKS — Research Paper Q&A
 
 ```
 Input:     "Give me summary of attention is all you need based on uploaded document"
@@ -232,6 +231,7 @@ Papers:    3 superseding papers with URLs and summaries
 Latency:   ~5.1s (dual search + structured generation)
 ```
 ![claim](docs/images/claim.png)
+
 ---
 
 ## ⚡ Infrastructure
@@ -240,29 +240,26 @@ Latency:   ~5.1s (dual search + structured generation)
 %%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1e3a5f', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#4a90d9', 'lineColor': '#4a90d9', 'clusterBkg': '#0d2137', 'clusterBorder': '#4a90d9', 'titleColor': '#ffffff', 'nodeTextColor': '#ffffff'}}}%%
 flowchart TB
     subgraph AWS[AWS — us-east-1]
-        subgraph EC2[EC2 Instance — m7i-flex.large — Currently Deployed]
-            subgraph DC[Docker Compose]
-                FA2[FastAPI Container\nverirag-backend]
-                ST2[Streamlit Container\nverirag-frontend]
-                VOL1[Volume: verirag_data\nSQLite checkpoints]
-                VOL2[Volume: verirag_cache\nEmbedding cache]
+        subgraph EKS[EKS Cluster — Kubernetes 1.32 — Live]
+            subgraph NS[verirag namespace]
+                FA2[FastAPI Pods\nverirag-backend\nmin:2 max:5 HPA]
+                ST2[Streamlit Pod\nverirag-frontend\nreplicas:1]
+                HPA3[HPA — CPU 70% target]
+                VOL1[PV: verirag_data\nSQLite checkpoints]
+                VOL2[PV: verirag_cache\nEmbedding cache]
             end
+            ALB[AWS ALB — Internet Facing\nk8s-verirag-veriragi-34154a2410\n-1207122187.us-east-1.elb.amazonaws.com]
         end
         ECR3[ECR — 2 repositories\nverirag-backend + verirag-frontend]
         QDRANT4[Qdrant Cloud\nPer-session collections\nus-east-1]
     end
 
-    subgraph EKS_SOON[EKS Migration — In Progress]
-        K8S[Kubernetes Manifests Ready]
-        HPA2[HPA — FastAPI 2-5 pods]
-        CICD[GitHub Actions CI/CD\nBuild → ECR → Rolling Deploy]
-        ROLL[Zero-downtime Rolling Updates\nmaxUnavailable=0]
-    end
-
+    ALB --> FA2 & ST2
     ECR3 --> FA2 & ST2
     FA2 --> QDRANT4
     FA2 <--> VOL1
     FA2 <--> VOL2
+    HPA3 --> FA2
 
     style FA2 fill:#145a32,stroke:#27ae60,color:#fff
     style ST2 fill:#1a5276,stroke:#4a90d9,color:#fff
@@ -270,57 +267,8 @@ flowchart TB
     style VOL2 fill:#1b4f72,stroke:#5dade2,color:#fff
     style ECR3 fill:#784212,stroke:#f0b27a,color:#fff
     style QDRANT4 fill:#922b21,stroke:#f1948a,color:#fff
-    style K8S fill:#6e2f8a,stroke:#bb8fce,color:#fff
-    style HPA2 fill:#6e2f8a,stroke:#bb8fce,color:#fff
-    style CICD fill:#6e2f8a,stroke:#bb8fce,color:#fff
-    style ROLL fill:#6e2f8a,stroke:#bb8fce,color:#fff
-```
-
----
-
----
-
-## 📡 LangSmith Observability
-
-```python
-# backend/rag_graph.py — all nodes decorated with @traceable
-# LANGSMITH_TRACING=true in .env is all that is needed
-
-@traceable(name="router_node")
-def router_node(state: RAGState): ...
-
-@traceable(name="agent_node")
-def agent_node(state: RAGState): ...
-
-@traceable(name="relevancy_check_node")
-def relevancy_check_node(state: RAGState): ...
-
-@traceable(name="verify_claim_node")
-def verify_claim_node(state: RAGState): ...
-
-@traceable(name="generate_answer_node")
-def generate_answer_node(state: RAGState): ...
-
-# LangSmith dashboard shows per-run:
-# → per-node latency breakdown
-# → prompt + completion token counts per node
-# → exact inputs/outputs per node
-# → total cost per query
-```
-
----
-
-## 🔌 API Reference
-
-### Routes
-
-```
-GET  /health                          → Liveness probe — always 200
-GET  /ready                           → Readiness probe — 200 after LangGraph compiled
-GET  /sessions/{id}/info              → Collection stats, paper titles, hybrid flag
-GET  /sessions/{id}/history           → Reload past messages from SQLite checkpointer
-POST /sessions/{id}/ingest            → Upload PDF / URL / ArXiv ID → Qdrant
-POST /sessions/{id}/query             → Run RAG pipeline, stream answer tokens
+    style ALB fill:#6e2f8a,stroke:#bb8fce,color:#fff
+    style HPA3 fill:#6e2f8a,stroke:#bb8fce,color:#fff
 ```
 
 ---
@@ -342,8 +290,9 @@ POST /sessions/{id}/query             → Run RAG pipeline, stream answer tokens
 | Serving | FastAPI async — NDJSON streaming, Pydantic schemas |
 | Frontend | Streamlit — token streaming, session sidebar, sources expander |
 | Containerization | Docker — 2 independent containers, named volumes |
-| Infrastructure | AWS EC2 (m7i-flex.large) + ECR — currently deployed |
-| EKS Migration | Kubernetes manifests + HPA + GitHub Actions CI/CD — in progress |
+| Infrastructure | AWS EKS (Kubernetes 1.32) + ECR + ALB — live deployed |
+| Autoscaling | HPA — FastAPI 2-5 pods, CPU 70% target |
+| CI/CD | GitHub Actions — build → ECR → rolling deploy to EKS |
 | Monitoring | LangSmith — per-node latency, token costs, trace history |
 
 ---
@@ -363,7 +312,8 @@ POST /sessions/{id}/query             → Run RAG pipeline, stream answer tokens
 | Eval cost | ~$0.049 per full run (10 test cases) |
 | Stream protocol | NDJSON — token events + done event |
 | Verification searches | 2 Tavily calls per verify_claim query |
-| Deployment | AWS EC2 — publicly accessible |
+| EKS nodes | 2 × t3.medium, us-east-1 |
+| FastAPI pods | 2 min → 5 max (HPA) |
 | ECR repositories | 2 (verirag-backend, verirag-frontend) |
 
 ---
@@ -387,25 +337,15 @@ cp .env.example .env
 # Run locally — 2 terminals
 uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload   # Terminal 1
 streamlit run app.py                                            # Terminal 2
-
-# Health check
-curl http://localhost:8000/health
-
-# Swagger UI
-open http://localhost:8000/docs
-
-# Streamlit UI
-open http://localhost:8501
 ```
 
-### Docker Compose (Recommended)
+### Docker Compose
 
 ```bash
 docker compose up --build
-
-# Verify
-curl http://localhost:8000/health   # → {"status":"ok"}
-open http://localhost:8501          # → Streamlit UI
+# FastAPI  → http://localhost:8000/health
+# Swagger  → http://localhost:8000/docs
+# Streamlit → http://localhost:8501
 ```
 
 ### Run Evaluation
@@ -421,46 +361,27 @@ python evaluate.py
 ## 🔑 System Modes
 
 ### Mode 1 — Document Q&A
-
 ```
-Upload PDF / URL / ArXiv ID → Ask questions → Get grounded answers with sources
-
-Example:
-  Input:  "What methodology did the authors use?"
-  Route:  retrieve
-  Output: Answer grounded in retrieved chunks + sources expander
+Upload PDF / URL / ArXiv ID → Ask questions → Grounded answers with sources
+Route: retrieve
 ```
 
 ### Mode 2 — Claim Verification
-
 ```
-Ask if a research finding is still current → Get verdict with superseding papers
-
-Example:
-  Input:  "Is attention mechanism still the standard in modern LLMs?"
-  Route:  verify_claim
-  Output: Verdict (VALID/OUTDATED) + superseding papers with URLs
+Ask if a research finding is still current → Verdict with superseding papers
+Route: verify_claim
 ```
 
 ### Mode 3 — Direct Answer
-
 ```
-General knowledge questions need no retrieval
-
-Example:
-  Input:  "What is the transformer architecture?"
-  Route:  direct_answer
-  Output: Answer from model knowledge — no retrieval cost
+General knowledge questions — no retrieval cost
+Route: direct_answer
 ```
 
 ### Mode 4 — /btw Side Channel
-
 ```
-Quick question without saving to session history
-
-Example:
-  Input:  /btw what is RoPE?
-  Output: Instant answer — not saved to chat history
+Quick question not saved to session history
+Usage: /btw what is RoPE?
 ```
 
 ---
